@@ -1,0 +1,162 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2512
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import torch\
+from torch.utils.data import DataLoader\
+import matplotlib.pyplot as plt\
+import os\
+import torch.nn.functional as F\
+\
+\
+# Funzione per calcolare il numero di parametri\
+def count_parameters(model):\
+    return sum(p.numel() for p in model.NN.parameters() if p.requires_grad)\
+\
+# Classe trainer ottimizzata per mini-batch\
+class MiniBatchTrainer:\
+    def __init__(self, model, Cost, Metric, dataset, optimizer_type='sgd', lr=0.001):\
+        self.model = model\
+        self.Cost = Cost\
+        self.Metric = Metric\
+        self.dataset = dataset\
+        self.optimizer_type = optimizer_type.lower()\
+        self.weights_dir = './weights'\
+        os.makedirs(self.weights_dir, exist_ok=True)\
+\
+        # Inizializza l'ottimizzatore\
+        if self.optimizer_type == 'adam':\
+            self.optimizer = torch.optim.Adam(model.NN.parameters(), lr=lr)\
+        elif self.optimizer_type == 'sgd':\
+            self.optimizer = torch.optim.SGD(model.NN.parameters(), lr=lr)\
+        else:\
+            raise ValueError("Optimizer must be 'adam' or 'sgd'")\
+\
+    def train(self, num_epochs=1000, batch_size=64, lambda_reg=0.001, wsave_step=100):\
+        dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=True)\
+        N = count_parameters(self.model)\
+\
+        history = \{\
+            'loss': [],\
+            'cost': [],\
+            'metric': [],\
+            'epochs': []\
+        \}\
+\
+        for epoch in range(num_epochs):\
+            epoch_loss = 0.0\
+            epoch_cost = 0.0\
+            epoch_metric = 0.0\
+\
+            for batch_X, batch_y in dataloader:\
+                # Forward pass\
+                outputs = self.model.NN(batch_X)\
+                cost = self.Cost(outputs, batch_y)\
+                mod2 = sum((p**2).sum() for p in self.model.NN.parameters())\
+                loss = cost + (lambda_reg/2) * mod2\
+\
+                # Backward pass\
+                self.optimizer.zero_grad()\
+                loss.backward()\
+                self.optimizer.step()\
+\
+                # Accumula le metriche\
+                epoch_loss += loss.item()\
+                epoch_cost += cost.item()\
+                epoch_metric += self.Metric(outputs, batch_y).item()\
+\
+            # Calcola le medie\
+            history['loss'].append(epoch_loss / len(dataloader))\
+            history['cost'].append(epoch_cost / len(dataloader))\
+            history['metric'].append(epoch_metric / len(dataloader))\
+            history['epochs'].append(epoch + 1)\
+\
+            # Stampa ogni 100 epoche\
+            if (epoch + 1) % 100 == 0:\
+                print(f"Epoch [\{epoch+1\}/\{num_epochs\}] | Loss: \{history['loss'][-1]:.4f\} | Cost: \{history['cost'][-1]:.4f\} | Metric: \{history['metric'][-1]:.2%\}")\
+\
+            if (epoch + 1) % wsave_step == 0:\
+                torch.save(self.model.NN.state_dict(), f"\{self.weights_dir\}/model_epoch_\{epoch+1\}.pt")\
+\
+        return history\
+\
+\
+# IEEEEEEEEE\
+Cost = lambda logits, target: F.cross_entropy(logits, target)\
+Metric = lambda logits, target: (torch.argmax(logits, dim=1) == target).float().mean()\
+\
+"""# CONSTRAIN DENSITY"""\
+\
+import matplotlib.pyplot as plt\
+\
+# Calcola il numero di parametri del modello\
+N = sum(p.numel() for p in model.NN.parameters() if p.requires_grad)\
+print(N)\
+\
+# Parametri di addestramento\
+alphas = [0.25, 0.5, 1.0, 1.5, 2.0]\
+\
+training_params = \{\
+    'batch_size': 64,\
+    'lambda_reg': 0.001\
+\}\
+\
+losses = []\
+accuracies = []\
+dataset_sizes = []\
+\
+P_base = int(0.25 * N)  # riferimento per alpha=0.5\
+\
+for alpha in alphas:\
+    # Calcola P in base ad alpha\
+    P = int(alpha * N)\
+\
+    #Normalization epochs\
+    num_epochs = int(800 * (P_base / P))\
+    print(f"Alpha: \{alpha:.2f\} | P: \{P\} | Epoche normalizzate: \{num_epochs\}")\
+\
+    # our dataset \
+    dataset = SpinDataset(P=P, vector_dim=100, K=10, p_flip=0.4, seed=42)\
+\
+\
+\
+    # Reinizializza il modello per ogni alpha\
+    net = FeedforwardNet(input_dim=100, hidden_dim=100, output_dim=10)\
+    model = NNModel(net)\
+\
+    # train\
+    trainer = MiniBatchTrainer(model, Cost, Metric, dataset, optimizer_type='sgd', lr=0.01)\
+    history = trainer.train(num_epochs=num_epochs, **training_params)\
+\
+    # save metrics\
+    final_loss = history['loss'][-1]\
+    final_accuracy = history['metric'][-1]\
+\
+    losses.append(final_loss)\
+    accuracies.append(final_accuracy)\
+    dataset_sizes.append(P)\
+\
+    print(f"Alpha: \{alpha:.2f\} | P: \{P\} | Final Loss: \{final_loss:.4e\} | Accuracy: \{final_accuracy:.2%\}")\
+\
+# Plot results\
+plt.figure(figsize=(12, 5))\
+\
+plt.subplot(1, 2, 1)\
+plt.plot(alphas, losses, marker='o', linestyle='-')\
+plt.xlabel("Alpha (P/N)")\
+plt.ylabel("Final Training Loss")\
+plt.title("Training Loss vs Alpha")\
+plt.grid(True)\
+\
+plt.subplot(1, 2, 2)\
+plt.plot(alphas, accuracies, marker='o', linestyle='-', color='green')\
+plt.xlabel("Alpha (P/N)")\
+plt.ylabel("Final Training Accuracy")\
+plt.title("Training Accuracy vs Alpha")\
+plt.grid(True)\
+\
+plt.tight_layout()\
+plt.show()}
